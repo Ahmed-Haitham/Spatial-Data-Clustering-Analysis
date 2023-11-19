@@ -1,0 +1,401 @@
+---
+title: "Group3"
+author: "Gizem Güleli & Ahmed Abdelmaksoud"
+date: "2023-11-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=FALSE,warning=FALSE, results=FALSE, message=FALSE}
+##Loading and reading packages if its required
+if(!require(sf)){install.packages("sf")}
+if(!require(sp)){install.packages("sp")}
+if(!require(spdep)){install.packages("spdep")}
+
+if(!require(satellite)){install.packages("satellite")}
+if(!require(CARBayes)){install.packages("CARBayes")}
+if(!require(mclust)){install.packages("mclust")}
+if(!require(leaflet)){install.packages("leaflet")}
+if(!require(leaflet.extras)){install.packages("leaflet.extras")}
+
+
+
+```
+
+
+```{r, echo=T,warning=FALSE,results=FALSE, message=FALSE}
+library(sf) #to read shape files and convert to sf files
+library(sp) #to convert sp object
+library(spdep) #to create neighborhood matrıx &  For spatial dependencies
+library(satellite) #it was neede to download CARBayes package
+library(CARBayes)  # For Bayesian model
+library(mclust) #for the bivariate mixture model
+library(leaflet) #for mapping  
+library(leaflet.extras) 
+
+```
+
+#The data 
+
+There are 2 folders :
+
+•	The Data folder contains 2 csv files containing expected counts and observed counts in the 2 years.
+    -expected_counts.csv file have 271 observations with 3 variables that are; code, E2004, E2005
+    -respiratory_admissions.csv file have again 271 observations with 3 variables that are; IG, Y2004, Y2005
+
+
+•	The SG_IntermediateZoneBdry_2001 folder contains the shapefiles for constructing a spatial object in R. 
+    -Shape files have 1235 observations and 6 variables which are ; IZ_CODE, IZ_NAME, STDAREA_HA, Shape_Leng, Shape_Area, geometry
+ 
+
+
+#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately, calculate summary statistics and map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
+
+```{r  read two data set which are called "expected_counts" and "respiratory_admissions"}
+data1 <- read.csv(file="Data/expected_counts.csv")
+head(data1)
+
+data2 <- read.csv(file="Data/respiratory_admissions.csv")
+head(data2)
+
+```
+
+ looks like code and IG variables are matchıng and we can merge the two dataset but first ı wanted to check is there any non-matching value or not to don't miss any value or decide merging method.
+
+```{r}
+# Check non-matching values between "code" and "IG" variables
+non_matching_values <- setdiff(data1$code, data2$IG)
+
+# Print the non-matching values
+if(length(non_matching_values) > 0) {
+  print(non_matching_values)
+} else {
+  print("No non-matching values found.")
+}
+```
+
+There is no non-matching value thus we can use inner join method to merge these two dataset easily.
+
+```{r}
+data <- merge(data1, data2, by.x = "code", by.y = "IG", all = TRUE)
+head(data)
+
+
+```
+
+
+
+```{r we read the shapefiles by using "sf" package and printed first 3 rows. }
+shape<-read_sf("SG_IntermediateZoneBdry_2001/")
+head(shape, 3)
+```
+
+
+We observed that the unique IZ codes appear in this data table too, so that is how we now link the shapefiles to our data using the **merge()** function. But this time we are sure that shapefiles have much more observation then dataset. Thats why we will try to protect dataset observations.
+
+```{r Perform left join to merge shapefiles with dataset}
+
+merged_data <- merge(data, shape, by.x = "code", by.y = "IZ_CODE", all.x = TRUE)
+```
+
+The set of data points in the data set can relate to a subset or all of the areas in the shapefile. In this example the shapefile elements contain the polygon information for all IZs in Scotland, where as the data set only contains data on the IZs in  Glasgow. Thus the combined spatial data object **sp.dat** only contains the set of IZs in Glasgow. To observe this we plot the both shape and merged data geometry.
+
+```{r, fig.align='center' }
+# Set up a 1x2 plotting layout
+par(mfrow = c(1, 2))
+
+# Plot the geometry of the shapefile
+plot(shape$geometry, main = "Shapefile Geometry")
+
+# Plot the geometry of the merged dataset
+plot(merged_data$geometry, main = "Merged Data Geometry")
+```
+```{r}
+str(merged_data)
+class(merged_data)
+```
+
+
+```{r calculate the Standard Mortality Ratio (SMR) for each year separately, }
+# Calculate SMR for 2004
+merged_data$SMR_2004 <- (merged_data$Y2004 / merged_data$E2004)
+
+# Calculate SMR for 2005
+merged_data$SMR_2005 <- (merged_data$Y2005 / merged_data$E2005)
+
+
+```
+
+
+```{r calculate summary statistics }
+summary(merged_data)
+
+###add only SMR2004 = smr2005 = EDA and interpretation
+```
+
+
+```{r map the risks for the two years in separate maps}
+###changing color scale 
+
+# Simplify the multipolygon to a single polygon
+merged_data$geometry <- st_simplify(merged_data$geometry)
+
+# Convert to sf object
+sf.dat <- st_as_sf(merged_data)
+
+# Convert to sp object
+sp.dat <- as(sf.dat, "Spatial")
+
+# Plot maps
+par(mfrow = c(1, 2))
+
+
+# Plot the map with spatial borders for SMR_2004
+plot(sf.dat["SMR_2004"], main = "SMR 2004")
+
+# Plot the map with spatial borders for SMR_2005
+plot(sf.dat["SMR_2005"], main = "SMR 2005" , col = color_palette)
+
+```
+
+
+```{r}
+# Define a custom color palette
+custom_palette <- colorRampPalette(c("white", "red"))(n = 20)  # Adjust 'n' as needed
+
+# Plot the map with spatial borders for SMR_2005 using the custom color palette
+plot(sf.dat["SMR_2005"], main = "SMR 2005", col = custom_palette)
+
+```
+
+
+#Comment on the summaries and any spatial patterns of interest you see in the maps. 
+
+
+SMR > 1: Indicates a higher occurrence of respiratory diseases than expected. This might suggest potential health risks or factors contributing to an elevated incidence of respiratory diseases in the studied population.
+
+SMR < 1: Indicates a lower occurrence of respiratory diseases than expected. This might suggest protective factors or a population that experiences fewer respiratory diseases than what would be anticipated based on the standard population.
+
+SMR = 1: Indicates a respiratory disease occurrence similar to the expected rate. In this case, the observed respiratory disease occurrences align with what would be expected based on the standard population.
+
+
+We can observe that areas with high SMR values tend to be close to other areas with high SMR values, and areas with low SMR values tend to be close to other areas with low SMR values 
+
+
+
+
+```{r Check for spatial autocorrelation in each of the years.}
+
+# Create neighborhood matrix
+W.nb <- poly2nb(sf.dat$geometry, row.names = rownames(sp.dat))
+W <- nb2mat(W.nb, style = "B")
+W.list <- nb2listw(W.nb, style = "B")
+
+# Moran's I for SMR in 2004
+moran_I_2004 <- moran.test(sf.dat$SMR_2004, W.list)
+print("Moran's I for SMR in 2004:")
+print(moran_I_2004)
+
+# Moran's I for SMR in 2005
+moran_I_2005 <- moran.test(sf.dat$SMR_2005, W.list)
+print("Moran's I for SMR in 2005:")
+print(moran_I_2005)
+```
+The low p-values and positive autocorrelation suggest that there is a significant spatial clustering of SMR values in both 2004 and 2005.
+
+The positive Moran's I statistic indicates a positive spatial autocorrelation, suggesting that spatial clusters where neighboring regions exhibit similar patterns in respiratory disease occurrence, as indicated by comparable SMR values. This positive spatial autocorrelation observed in the Moran's I statistic is consistent with what is visually evident on the maps. 
+
+The positive autocorrelation suggests the presence of spatial clusters, meaning that neighboring regions have similar SMR values. This could indicate the presence of spatial patterns in health outcomes.
+
+
+
+#Q2.	Run a separate Poisson Leroux CAR model on each year for the respiratory counts using only an intercept term (no covariates) and expected count offset. Produce some summaries examining convergence of the chain and comment on them. Plot the fitted values on two maps and comment on them.
+
+
+```{r A simple (no correlation) covariate model -for 2004}
+# Setting the regression formula/equation
+formula1 <- Y2004 ~ offset(log(E2004))
+
+# Fit using MLE/glm
+model1 <- glm(formula = formula1, family = "poisson", data = sp.dat)
+
+# Summary of the model
+summary(model1)
+
+# Check the relative risks
+exp(cbind(model1$coefficients, confint(model1)))
+
+# Residual diagnostics - normality and constant variance
+par(mfrow = c(1, 2))
+qqnorm(residuals(model1, type = "pearson"), main = "", pch = 19)
+qqline(residuals(model1, type = "pearson"), col = "red")
+plot(model1$fitted.values, residuals(model1, type = "pearson"), pch = 19, 
+     xlab = "Fitted values", ylab = "Residuals")
+
+# Residual diagnostics - correlation
+# Replace W.list with our actual spatial weights matrix.
+moran.mc(x = residuals(model1, type = "pearson"), listw = W.list, nsim = 10000)
+
+```
+
+```{r A simple (no correlation) covariate model -for 2005}
+# Setting the regression formula/equation for model2
+formula2 <- Y2005 ~ offset(log(E2005))
+
+# Fit using MLE/glm for model2
+model2 <- glm(formula = formula2, family = "poisson", data = merged_data)
+
+# Summary of model2
+summary(model2)
+
+# Check the relative risks for model2
+exp(cbind(model2$coefficients, confint(model2)))
+
+# Residual diagnostics - normality and constant variance for model2
+par(mfrow = c(1, 2))
+qqnorm(residuals(model2, type = "pearson"), main = "", pch = 19)
+qqline(residuals(model2, type = "pearson"), col = "red")
+plot(model2$fitted.values, residuals(model2, type = "pearson"), pch = 19, 
+     xlab = "Fitted values", ylab = "Residuals")
+
+# Residual diagnostics - correlation for model2
+# Replace W.list with our actual spatial weights matrix.
+moran.mc(x = residuals(model2, type = "pearson"), listw = W.list, nsim = 10000)
+
+```
+The results from fitting the Poisson log-linear models for both years (2004 and 2005) show similar patterns.
+The intercepts are approximately equals to -0.16 (model1) and -0.19 (model2) and they represents the log of the expected count when all other covariates are zero.
+
+The relative risks for the intercepts are approximately 0.82 (model1)  and 0.86 (model2).
+
+QQ plots and residuals vs. fitted values plots are indicate reasonably normal and constant variance of residuals.
+
+The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the
+significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore we now fit a spatial correlation model using the CARBayes package.
+
+```{r Spatial modelling with CARBayes- for 2004}
+
+# Fitting the spatial correlation model for 2004
+model_2004 <- S.CARleroux(formula = formula1, family = "poisson", data = sf.dat, W = W,
+                          burnin = 10000, n.sample = 100000, thin = 10, verbose = FALSE)
+
+# Print model and summary of the model for 2004
+print(model_2004)
+summary(model_2004)
+
+# Check convergence for 2004
+plot(model_2004$samples$rho)
+
+# Assess goodness of fit for 2004
+moran.mc(x = residuals(model_2004, type = "pearson"), listw = W.list, nsim = 10000)
+
+
+```
+
+
+
+```{r}
+
+# Inference from the model for 2004
+# Estimated relative risks and 95% credible intervals
+exp(model_2004$summary.results[, c("Mean", "2.5%", "97.5%")])
+
+# Calculate and map risk for 2004
+sp.dat@data$risk_2004 <- model_2004$fitted.values / sp.dat@data$E2004
+colours_risk_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat@data$risk_2004)
+
+leaflet(data = sp.dat) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_risk_2004(risk_2004),
+              color = "", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_risk_2004, values = sp.dat@data$risk_2004,
+            opacity = 1, title = "Risk 2004") %>%
+  addScaleBar(position = "bottomleft")
+
+# Calculate and map Posterior Exceedance Probability (PEP) for 2004
+m <- nrow(model_2004$samples$fitted)
+risk_2004 <- model_2004$samples$fitted / matrix(rep(sp.dat@data$E2004, nrow(model_2004$samples$fitted)), nrow = m, byrow = TRUE)
+summarise.exceedences<-function(samples,exceedences)
+{
+exceed.vec<-apply((samples>exceedences),2,sum)/nrow(samples)
+9
+return(exceed.vec)
+}
+sp.dat@data$PEP_2004 <- as.numeric(summarise.exceedences(risk_2004, 1))
+colours_pep_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat@data$PEP_2004)
+
+leaflet(data = sp.dat) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_pep_2004(PEP_2004),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_pep_2004, values = sp.dat@data$PEP_2004,
+            opacity = 1, title = "PEP 2004") %>%
+  addScaleBar(position = "bottomleft")
+```
+
+
+
+
+#Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
+
+```{r  Extract mean fitted values for each year}
+
+mean_fitted_values_2004 <- predict(model1, type = "response")
+mean_fitted_values_2005 <- predict(model2, type = "response")
+
+# Combine mean fitted values for both years
+mean_fitted_values <- cbind(mean_fitted_values_2004, mean_fitted_values_2005)
+
+print(class(mean_fitted_values))
+head(mean_fitted_values)
+```
+```{r  Bivariate Mixture Model Clustering}
+
+# Fit the Gaussian Mixture Model on mean fitted values
+gmm_model <- Mclust(mean_fitted_values, G = 1:5)  
+
+# Get the cluster assignments
+cluster_assignments <- gmm_model$classification
+
+# Comment on the results
+cat("Number of clusters chosen:", gmm_model$G, "\n")
+
+# Component means
+cat("Component means:")
+print(gmm_model$means)
+```
+
+
+
+```{r}
+
+# Map the cluster membership
+sf.dat$Cluster <- as.factor(cluster_assignments)
+
+# Define colors for clusters
+cluster_colors <- colorFactor(palette = "Set3", levels = unique(cluster_assignments))
+
+# Create a leaflet map
+
+leaflet(data = sp.dat) %>% 
+  addTiles() %>% 
+  addPolygons(fillColor = ~cluster_colors(Cluster), 
+              color = "white", weight = 1, 
+              fillOpacity = 0.7) %>%
+  addLegend(pal = cluster_colors, values = sp.dat$Cluster, 
+            opacity = 1, title = "Cluster") %>%
+  addScaleBar(position = "bottomleft")
+
+```
+
+
+#Q4:4.	Run another clustering algorithm on the data and use an appropriate measure to compare the two clustering results. (The other algorithm could be k-means, hierarchical clustering, another type of mixture model clustering. The data used could be the raw SMRs or the average fitted values of the risks for the areas for both years, whatever you prefer. You do not need to comment on the other clustering results beyond comparing to the first clustering results from Question 3.)
+
+
+
+
