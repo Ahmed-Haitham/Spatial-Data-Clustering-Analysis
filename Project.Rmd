@@ -1,8 +1,8 @@
-# Gizem was here
+
 
 ---
-title: "Group3"
-author: "Gizem Güleli & Ahmed Abdelmaksoud"
+title: "Spatial Cluster analysis - Group3"
+author: "Gizem Gulsiye Güleli & Ahmed Abdelmaksoud"
 date: "2023-11-07"
 output: html_document
 ---
@@ -16,14 +16,11 @@ knitr::opts_chunk$set(echo = TRUE)
 if(!require(sf)){install.packages("sf")}
 if(!require(sp)){install.packages("sp")}
 if(!require(spdep)){install.packages("spdep")}
-
+if(!require(RColorBrewer)){install.packages("RColorBrewer")}
+if(!require(ggplot2)){install.packages("ggplot2")}
 if(!require(satellite)){install.packages("satellite")}
 if(!require(CARBayes)){install.packages("CARBayes")}
 if(!require(mclust)){install.packages("mclust")}
-if(!require(leaflet)){install.packages("leaflet")}
-if(!require(leaflet.extras)){install.packages("leaflet.extras")}
-
-
 
 ```
 
@@ -32,11 +29,11 @@ if(!require(leaflet.extras)){install.packages("leaflet.extras")}
 library(sf) #to read shape files and convert to sf files
 library(sp) #to convert sp object
 library(spdep) #to create neighborhood matrıx &  For spatial dependencies
+library(RColorBrewer) #for mapping  
+library(ggplot2) #for mapping  
 library(satellite) #it was neede to download CARBayes package
 library(CARBayes)  # For Bayesian model
 library(mclust) #for the bivariate mixture model
-library(leaflet) #for mapping  
-library(leaflet.extras) 
 
 ```
 
@@ -135,12 +132,47 @@ merged_data$SMR_2005 <- (merged_data$Y2005 / merged_data$E2005)
 ```{r calculate summary statistics }
 summary(merged_data)
 
-###add only SMR2004 = smr2005 = EDA and interpretation
+summary(merged_data[c("SMR_2004", "SMR_2005")])
+
+#EDa for SMR variables
+par(mfrow = c(1, 2))
+
+# Plot histogram for SMR_2004 and SMR_2005 to see distribution 
+
+hist(merged_data$SMR_2004, main = "SMR 2004 Distribution", xlab = "SMR_2004", col = "lightblue")
+hist(merged_data$SMR_2005, main = "SMR 2005 Distribution", xlab = "SMR_2005")
+
+# box plot for distrubiton and observe outliers
+boxplot(merged_data$SMR_2004, main = "SMR 2004 Boxplot", ylab = "SMR_2004", col = "lightblue", border = "black",notch = TRUE )
+boxplot(merged_data$SMR_2005, main = "SMR 2005 Boxplot", ylab = "SMR_2005",notch = TRUE)
+
+
+par(mfrow = c(1, 1))
+
+#scatter plot to observe relation between two variable 
+plot(merged_data$SMR_2004, merged_data$SMR_2005, main = "SMR 2004 vs. SMR 2005", xlab = "SMR_2004", ylab = "SMR_2005")
+abline(lm(merged_data$SMR_2005 ~ merged_data$SMR_2004), col = "red")
+
+cor(merged_data[c("SMR_2004", "SMR_2005")])
+
+
 ```
 
+ The minimum and maximum values  suggest that the overall range of standardized mortality ratios did not change significantly between the two years (minimum value equals 0.18 and maximum value equals 1.83 for 2004 ,and minimum value equals 0.31 and maximum value equals 1.98 for 2005)
 
-```{r map the risks for the two years in separate maps}
-###changing color scale 
+The median and mean values indicate the central tendency of the data, with the mean slightly higher than the median, suggesting a right-skewed distribution for both year. Histogram plot also showing and proving the right-skewed distribution for both year.
+Also the values are close to each other for both years, however "SMR_2005" having a slightly higher compared to "SMR_2004"
+
+For both SMR_2004 and SMR_2005, the box plots show the existing of outliers—individual data points beyond the whiskers. These extreme values suggest potential variability in specific areas, prompting further investigation into the factors influencing high standardized mortality ratios.
+
+we also check  the scatter plot to displays the relationship between "SMR_2004" and "SMR_2005" values for each observation.This type of plot is useful for visually inspecting the correlation or pattern between two variables. And from the graph we are able to observe positive relation between two variable.   So we calculated the correlation coefficient between "SMR_2004" and "SMR_2005" which is equal  0.85144 and indicates that there is highly positive linear relationship between the two variables.
+The high positive correlation indicates that areas with higher standardized mortality ratios in one year ("SMR_2004") tend to also have higher standardized mortality ratios in the other year ("SMR_2005").
+We could suggest some level of consistency or similarity in the factors influencing standardized mortality ratios between the two years.
+However correlation result does not imply causation; additional analysis is essential to uncover the underlying factors behind the observed correlation
+
+
+
+```{r convert Data Types and Create Spatial Objects for further study }
 
 # Simplify the multipolygon to a single polygon
 merged_data$geometry <- st_simplify(merged_data$geometry)
@@ -151,27 +183,40 @@ sf.dat <- st_as_sf(merged_data)
 # Convert to sp object
 sp.dat <- as(sf.dat, "Spatial")
 
-# Plot maps
+
+
+```
+
+```{r map the risks for the two years in separate maps}
+
+# Set up a 1x2 layout for two plots
 par(mfrow = c(1, 2))
 
+# for 2004
+ggplot(data = sf.dat) +
+  geom_sf(aes(fill = SMR_2004)) +
+  coord_sf() +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  labs(title = "Risk for 2004", fill = "SMR") +
+  theme(title = element_text(size=16)) +
+scale_fill_gradientn(colors=brewer.pal(n=9, name="YlOrRd"))
 
-# Plot the map with spatial borders for SMR_2004
-plot(sf.dat["SMR_2004"], main = "SMR 2004")
 
-# Plot the map with spatial borders for SMR_2005
-plot(sf.dat["SMR_2005"], main = "SMR 2005" , col = color_palette)
+# for 2005
+ggplot(data = sf.dat) +
+  geom_sf(aes(fill = SMR_2005)) +
+  coord_sf() +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  labs(title = "Risk for 2005", fill = "SMR") +
+  theme(title = element_text(size=16)) +
+scale_fill_gradientn(colors=brewer.pal(n=9, name="YlOrRd"))
 
 ```
 
 
-```{r}
-# Define a custom color palette
-custom_palette <- colorRampPalette(c("white", "red"))(n = 20)  # Adjust 'n' as needed
 
-# Plot the map with spatial borders for SMR_2005 using the custom color palette
-plot(sf.dat["SMR_2005"], main = "SMR 2005", col = custom_palette)
-
-```
 
 
 #Comment on the summaries and any spatial patterns of interest you see in the maps. 
@@ -275,8 +320,7 @@ The relative risks for the intercepts are approximately 0.82 (model1)  and 0.86 
 
 QQ plots and residuals vs. fitted values plots are indicate reasonably normal and constant variance of residuals.
 
-The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the
-significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore we now fit a spatial correlation model using the CARBayes package.
+The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore we now fit a spatial correlation model using the CARBayes package.
 
 ```{r Spatial modelling with CARBayes- for 2004}
 
@@ -288,7 +332,9 @@ model_2004 <- S.CARleroux(formula = formula1, family = "poisson", data = sf.dat,
 print(model_2004)
 summary(model_2004)
 
+
 # Check convergence for 2004
+summary(model_2004$samples)
 plot(model_2004$samples$rho)
 
 # Assess goodness of fit for 2004
@@ -302,23 +348,15 @@ moran.mc(x = residuals(model_2004, type = "pearson"), listw = W.list, nsim = 100
 ```{r}
 
 # Inference from the model for 2004
+
 # Estimated relative risks and 95% credible intervals
 exp(model_2004$summary.results[, c("Mean", "2.5%", "97.5%")])
 
-# Calculate and map risk for 2004
+# Calculate  risk for 2004
 sp.dat@data$risk_2004 <- model_2004$fitted.values / sp.dat@data$E2004
-colours_risk_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat@data$risk_2004)
 
-leaflet(data = sp.dat) %>%
-  addTiles() %>%
-  addPolygons(fillColor = ~colours_risk_2004(risk_2004),
-              color = "", weight = 1,
-              fillOpacity = 0.7) %>%
-  addLegend(pal = colours_risk_2004, values = sp.dat@data$risk_2004,
-            opacity = 1, title = "Risk 2004") %>%
-  addScaleBar(position = "bottomleft")
 
-# Calculate and map Posterior Exceedance Probability (PEP) for 2004
+# Calculate Posterior Exceedance Probability (PEP) for 2004
 m <- nrow(model_2004$samples$fitted)
 risk_2004 <- model_2004$samples$fitted / matrix(rep(sp.dat@data$E2004, nrow(model_2004$samples$fitted)), nrow = m, byrow = TRUE)
 summarise.exceedences<-function(samples,exceedences)
@@ -327,20 +365,112 @@ exceed.vec<-apply((samples>exceedences),2,sum)/nrow(samples)
 9
 return(exceed.vec)
 }
-sp.dat@data$PEP_2004 <- as.numeric(summarise.exceedences(risk_2004, 1))
-colours_pep_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat@data$PEP_2004)
 
-leaflet(data = sp.dat) %>%
+sp.dat@data$PEP_2004 <- as.numeric(summarise.exceedences(risk_2004, 1))
+
+
+##mapping the results for 2004 
+sp.dat.ll <- spTransform(sp.dat, CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+par(mfrow = c(1, 2))
+
+##Risk 
+
+colours_risk_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$risk)
+
+
+
+leaflet(data = sp.dat.ll) %>%
   addTiles() %>%
-  addPolygons(fillColor = ~colours_pep_2004(PEP_2004),
+  addPolygons(fillColor = ~colours_risk_2004(risk_2004),
               color = "black", weight = 1,
               fillOpacity = 0.7) %>%
-  addLegend(pal = colours_pep_2004, values = sp.dat@data$PEP_2004,
-            opacity = 1, title = "PEP 2004") %>%
+  addLegend(pal = colours, values = sp.dat.ll@data$risk_2004,
+            opacity = 1, title = "Risk 2004") %>%
   addScaleBar(position = "bottomleft")
+
+##PEP
+colours_pep_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$PEP_2004)
+
+leaflet(data=sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_pep_2004(PEP_2004),
+              color="black", weight=1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours, values = sp.dat.ll@data$PEP_2004,
+            opacity = 1, title="PEP 2004 ") %>%
+  addScaleBar(position="bottomleft")
+
 ```
 
 
+
+
+
+```{r Spatial modelling with CARBayes- for 2005}
+
+# Fitting the spatial correlation model for 2005
+model_2005 <- S.CARleroux(formula = formula2, family = "poisson", data = sf.dat, W = W,
+                          burnin = 10000, n.sample = 100000, thin = 10, verbose = FALSE)
+
+# Print model and summary of the model for 2005
+print(model_2005)
+summary(model_2005)
+
+# Check convergence for 2005
+summary(model_2005$samples)
+plot(model_2005$samples$rho)
+
+# Assess goodness of fit for 2005
+moran.mc(x = residuals(model_2005, type = "pearson"), listw = W.list, nsim = 10000)
+
+
+```
+
+
+```{r}
+# Inference from the model for 2005
+# Estimated relative risks and 95% credible intervals
+exp(model_2005$summary.results[, c("Mean", "2.5%", "97.5%")])
+
+# Calculate risk for 2005
+sp.dat@data$risk_2005 <- model_2005$fitted.values / sp.dat@data$E2005
+
+# Calculate Posterior Exceedance Probability (PEP) for 2005
+m <- nrow(model_2005$samples$fitted)
+risk_2005 <- model_2005$samples$fitted / matrix(rep(sp.dat@data$E2005, nrow(model_2005$samples$fitted)), nrow = m, byrow = TRUE)
+sp.dat@data$PEP_2005 <- as.numeric(summarise.exceedences(risk_2005, 1))
+
+## Mapping the results for 2005
+sp.dat.ll <- spTransform(sp.dat, CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+par(mfrow = c(1, 2))
+
+## Risk
+colours_risk_2005 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$risk_2005)
+
+leaflet(data = sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_risk_2005(risk_2005),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_risk_2005, values = sp.dat.ll@data$risk_2005,
+            opacity = 1, title = "Risk 2005") %>%
+  addScaleBar(position = "bottomleft")
+
+## PEP
+colours_pep_2005 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$PEP_2005)
+
+leaflet(data = sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_pep_2005(PEP_2005),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_pep_2005, values = sp.dat.ll@data$PEP_2005,
+            opacity = 1, title = "PEP 2005") %>%
+  addScaleBar(position = "bottomleft")
+
+```
 
 
 #Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
