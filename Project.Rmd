@@ -20,6 +20,8 @@ if(!require(ggplot2)){install.packages("ggplot2")}
 if(!require(satellite)){install.packages("satellite")}
 if(!require(CARBayes)){install.packages("CARBayes")}
 if(!require(mclust)){install.packages("mclust")}
+if(!require(leaflet)){install.packages("leaflet")}
+if(!require(leaflet.extras)){install.packages("leaflet.extras")}
 
 ```
 
@@ -33,10 +35,16 @@ library(ggplot2) #for mapping
 library(satellite) #it was neede to download CARBayes package
 library(CARBayes)  # For Bayesian model
 library(mclust) #for the bivariate mixture model
+library(leaflet)
+library(leaflet.extras)
 
 ```
 
-#The data 
+
+
+#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately, calculate summary statistics and map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
+
+##The data 
 
 There are 2 folders :
 
@@ -49,8 +57,6 @@ There are 2 folders :
     -Shape files have 1235 observations and 6 variables which are ; IZ_CODE, IZ_NAME, STDAREA_HA, Shape_Leng, Shape_Area, geometry
  
 
-
-#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately, calculate summary statistics and map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
 
 ```{r  read two data set which are called "expected_counts" and "respiratory_admissions"}
 data1 <- read.csv(file="Data/expected_counts.csv")
@@ -115,7 +121,7 @@ plot(merged_data$geometry, main = "Merged Data Geometry")
 str(merged_data)
 class(merged_data)
 ```
-
+## Calculating SMR and Summary Statistics (including EDA for SMR values )
 
 ```{r calculate the Standard Mortality Ratio (SMR) for each year separately, }
 # Calculate SMR for 2004
@@ -169,9 +175,9 @@ The high positive correlation indicates that areas with higher standardized mort
 We could suggest some level of consistency or similarity in the factors influencing standardized mortality ratios between the two years.
 However correlation result does not imply causation; additional analysis is essential to uncover the underlying factors behind the observed correlation
 
+## Convert Data Types and Create Spatial Objects for further study
 
-
-```{r convert Data Types and Create Spatial Objects for further study }
+```{r  }
 
 # Simplify the multipolygon to a single polygon
 merged_data$geometry <- st_simplify(merged_data$geometry)
@@ -184,7 +190,10 @@ sp.dat <- as(sf.dat, "Spatial")
 
 ```
 
-```{r map the risks for the two years in separate maps}
+
+## Mapping the risks for the two years in separate maps
+
+```{r }
 
 # Set up a 1x2 layout for two plots
 par(mfrow = c(1, 2))
@@ -213,10 +222,7 @@ scale_fill_gradientn(colors=brewer.pal(n=9, name="YlOrRd"))
 ```
 
 
-
-
-
-#Comment on the summaries and any spatial patterns of interest you see in the maps. 
+##Comment on the summaries and any spatial patterns of interest you see in the maps. 
 
 
 SMR > 1: Indicates a higher occurrence of respiratory diseases than expected. This might suggest potential health risks or factors contributing to an elevated incidence of respiratory diseases in the studied population.
@@ -258,8 +264,9 @@ The positive autocorrelation suggests the presence of spatial clusters, meaning 
 
 #Q2.	Run a separate Poisson Leroux CAR model on each year for the respiratory counts using only an intercept term (no covariates) and expected count offset. Produce some summaries examining convergence of the chain and comment on them. Plot the fitted values on two maps and comment on them.
 
+##A simple (no correlation) covariate model
 
-```{r A simple (no correlation) covariate model -for 2004}
+```{r  -for 2004}
 # Setting the regression formula/equation
 formula1 <- Y2004 ~ offset(log(E2004))
 
@@ -285,7 +292,7 @@ moran.mc(x = residuals(model1, type = "pearson"), listw = W.list, nsim = 10000)
 
 ```
 
-```{r A simple (no correlation) covariate model -for 2005}
+```{r -for 2005}
 # Setting the regression formula/equation for model2
 formula2 <- Y2005 ~ offset(log(E2005))
 
@@ -319,7 +326,9 @@ QQ plots and residuals vs. fitted values plots are indicate reasonably normal an
 
 The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore we now fit a spatial correlation model using the CARBayes package.
 
-```{r Spatial modelling with CARBayes- for 2004}
+##Spatial modelling with CARBayes
+
+```{r - for 2004}
 
 # Fitting the spatial correlation model for 2004
 model_2004 <- S.CARleroux(formula = formula1, family = "poisson", data = sf.dat, W = W,
@@ -339,7 +348,6 @@ moran.mc(x = residuals(model_2004, type = "pearson"), listw = W.list, nsim = 100
 
 
 ```
-
 
 
 ```{r}
@@ -376,13 +384,12 @@ par(mfrow = c(1, 2))
 colours_risk_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$risk)
 
 
-
 leaflet(data = sp.dat.ll) %>%
   addTiles() %>%
   addPolygons(fillColor = ~colours_risk_2004(risk_2004),
               color = "black", weight = 1,
               fillOpacity = 0.7) %>%
-  addLegend(pal = colours, values = sp.dat.ll@data$risk_2004,
+  addLegend(pal = colours_risk_2004, values = sp.dat.ll@data$risk_2004,
             opacity = 1, title = "Risk 2004") %>%
   addScaleBar(position = "bottomleft")
 
@@ -394,7 +401,7 @@ leaflet(data=sp.dat.ll) %>%
   addPolygons(fillColor = ~colours_pep_2004(PEP_2004),
               color="black", weight=1,
               fillOpacity = 0.7) %>%
-  addLegend(pal = colours, values = sp.dat.ll@data$PEP_2004,
+  addLegend(pal = colours_pep_2004, values = sp.dat.ll@data$PEP_2004,
             opacity = 1, title="PEP 2004 ") %>%
   addScaleBar(position="bottomleft")
 
@@ -468,12 +475,16 @@ leaflet(data = sp.dat.ll) %>%
   addScaleBar(position = "bottomleft")
 
 ```
-
+In examining the spatial epidemiological data for 2004 and 2005, Poisson regression models with Leroux CAR spatial correlation were employed, considering offsets of log(E2004) and log(E2005), respectively.
+For the 2004 model, the estimated parameters, including the intercept (-0.2624), tau2 (0.3072), and rho (0.7407), indicated a significant spatial correlation. Convergence diagnostics and Moran's I test affirmed model reliability, with spatial risk maps illustrating the distribution of estimated risks across the area.
+In contrast, the 2005 model demonstrated a weaker spatial correlation (rho: 0.6764), with parameters - intercept (-0.2114) and tau2 (0.2953) - suggesting increased overall risk. Similar convergence diagnostics and Moran's I tests were applied, emphasizing changes in risk distribution through spatial risk maps.
+Comparing the two years, differences in estimated relative risks and spatial correlation emerged. Risk maps for each year aided in visually assessing changing risk distributions. Furthermore, areas with potentially elevated risks, identified through Posterior Exceedance Probability (PEP) maps, offered additional insights into hotspot locations.
+Notably, the 2004 model exhibited a lower Deviance Information Criterion (DIC), indicating a better fit compared to the 2005 model. Overall, this spatial epidemiological analysis provided insights into risk dynamics, highlighting potential shifts and hotspots across the study area over the two years.
 
 #Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
 
 
-```{r  Extract mean fitted values for each year}
+```{r  }
 # Extract mean fitted values for 2004 and 2005
 mean_fitted_values_2004 <- colMeans(model_2004$samples$fitted)
 mean_fitted_values_2005 <- colMeans(model_2005$samples$fitted)
@@ -487,12 +498,100 @@ bivariate_model <- Mclust(mean_fitted_values, G = 1:10)  # possible to  adjust t
 # Summary of the clustering result
 summary(bivariate_model)
 
+
 # Plot the clustering result
 plot(bivariate_model, what = "classification")
 
 
 ```
 
+
+```{r}
+
+library(clustMD)
+# Fit a mixture model with different covariance structures
+clust_eee <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EEE")
+clust_eev <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EII")
+clust_vev <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VII")
+clust_eei <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EEI")
+clust_vei <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VEI")
+clust_evi <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EVI")
+clust_vvi <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VVI")
+
+# Summary of the clustering results using Mclust
+summary(clust_eee)
+summary(clust_eev)
+summary(clust_vev)
+summary(clust_eei)
+summary(clust_vei)
+summary(clust_evi)
+summary(clust_vvi)
+
+# Plot 
+plot(clust_eev, what = "classification", main = "EII Covariance")
+plot(clust_vev, what = "classification", main = "VII Covariance")
+plot(clust_eee, what = "classification", main = "EEE Covariance")
+plot(clust_eei, what = "classification", main = "EEI Covariance")
+plot(clust_vei, what = "classification", main = "VEI Covariance")
+plot(clust_evi, what = "classification", main = "EVI Covariance")
+plot(clust_vvi, what = "classification", main = "VVI Covariance")
+
+```
+
+
+```{r}
+# Extract BIC values
+bic_values <- c(
+  BIC(clust_eee),
+  BIC(clust_eev),
+  BIC(clust_vev),
+  BIC(clust_eei),
+  BIC(clust_vei),
+  BIC(clust_evi),
+  BIC(clust_vvi)
+)
+
+# Display BIC values
+cat("BIC Values:\n")
+cat("EEE Covariance:", BIC(clust_eee), "\n")
+cat("EII Covariance:", BIC(clust_eev), "\n")
+cat("VII Covariance:", BIC(clust_vev), "\n")
+cat("EEI Covariance:", BIC(clust_eei), "\n")
+cat("VEI Covariance:", BIC(clust_vei), "\n")
+cat("EVI Covariance:", BIC(clust_evi), "\n")
+cat("VVI Covariance:", BIC(clust_vvi), "\n")
+
+# Choose the best model
+best_model <- switch(
+  which.min(bic_values),
+  "EEE Covariance" = clust_eee,
+  "EII Covariance" = clust_eev,
+  "VII Covariance" = clust_vev,
+  "EEI Covariance" = clust_eei,
+  "VEI Covariance" = clust_vei,
+  "EVI Covariance" = clust_evi,
+  "VVI Covariance" = clust_vvi
+)
+
+# Plot the best model
+plot(best_model, what = "classification", main = "Best Model")
+
+```
+```{r compare the best model from clusMD and mclust}
+par(mfrow = c(1, 2))
+
+# Plot the best model
+plot(best_model, what = "classification")
+title("Best Model")
+
+# Plot the original bivariate model
+plot(bivariate_model, what = "classification")
+title("Original Bivariate Model")
+
+```
+
+
+## Map the Cluster Membership
 ```{r}
 
 # Map the cluster membership
