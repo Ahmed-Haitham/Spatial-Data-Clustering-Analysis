@@ -1,5 +1,4 @@
 
-
 ---
 title: "Spatial Cluster analysis - Group3"
 author: "Gizem Gulsiye Güleli & Ahmed Abdelmaksoud"
@@ -500,6 +499,8 @@ cat("Number of clusters chosen:", gmm_model$G, "\n")
 # Component means
 cat("Component means:")
 print(gmm_model$means)
+
+
 ```
 
 
