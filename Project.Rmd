@@ -182,8 +182,6 @@ sf.dat <- st_as_sf(merged_data)
 # Convert to sp object
 sp.dat <- as(sf.dat, "Spatial")
 
-
-
 ```
 
 ```{r map the risks for the two years in separate maps}
@@ -474,17 +472,52 @@ leaflet(data = sp.dat.ll) %>%
 
 #Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
 
+
 ```{r  Extract mean fitted values for each year}
+# Extract mean fitted values for 2004 and 2005
+mean_fitted_values_2004 <- colMeans(model_2004$samples$fitted)
+mean_fitted_values_2005 <- colMeans(model_2005$samples$fitted)
 
-mean_fitted_values_2004 <- predict(model1, type = "response")
-mean_fitted_values_2005 <- predict(model2, type = "response")
-
-# Combine mean fitted values for both years
+# Combine the mean fitted values for both years
 mean_fitted_values <- cbind(mean_fitted_values_2004, mean_fitted_values_2005)
 
-print(class(mean_fitted_values))
-head(mean_fitted_values)
+# Run a bivariate mixture model clustering method
+bivariate_model <- Mclust(mean_fitted_values, G = 1:10)  # possible to  adjust the range for the number of clusters (G)
+
+# Summary of the clustering result
+summary(bivariate_model)
+
+# Plot the clustering result
+plot(bivariate_model, what = "classification")
+
+
 ```
+
+```{r}
+
+# Map the cluster membership
+cluster_membership <- predict(bivariate_model)$classification
+
+# Create a new data frame with cluster membership and spatial information
+cluster_data <- data.frame(ID = rownames(sp.dat@data), Cluster = cluster_membership)
+
+# Merge using base R merge function
+sp.dat_cluster <- merge(x = sp.dat.ll, y = cluster_data, by.x = "code", by.y = "ID", all.x = TRUE)
+
+# Mapping the cluster membership
+colours_cluster <- colorFactor(palette = "Set1", levels = unique(cluster_membership))
+
+leaflet(data = sp.dat_cluster) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_cluster(Cluster),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_cluster, values = sp.dat_cluster$Cluster,
+            opacity = 1, title = "Cluster Membership") %>%
+  addScaleBar(position = "bottomleft")
+```
+
+
 ```{r  Bivariate Mixture Model Clustering}
 
 # Fit the Gaussian Mixture Model on mean fitted values
