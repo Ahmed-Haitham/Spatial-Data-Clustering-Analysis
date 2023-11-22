@@ -10,8 +10,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r,include=FALSE,warning=FALSE, results=FALSE, message=FALSE}
-##Loading and reading packages if its required
+```{r Loading and reading packages if its required, include=FALSE,warning=FALSE, results=FALSE, message=FALSE}
+
 if(!require(sf)){install.packages("sf")}
 if(!require(sp)){install.packages("sp")}
 if(!require(spdep)){install.packages("spdep")}
@@ -26,7 +26,7 @@ if(!require(leaflet.extras)){install.packages("leaflet.extras")}
 ```
 
 
-```{r, echo=T,warning=FALSE,results=FALSE, message=FALSE}
+```{r read packages ,  echo=T,warning=FALSE,results=FALSE, message=FALSE}
 library(sf) #to read shape files and convert to sf files
 library(sp) #to convert sp object
 library(spdep) #to create neighborhood matrıx &  For spatial dependencies
@@ -42,7 +42,7 @@ library(leaflet.extras)
 
 
 
-#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately, calculate summary statistics and map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
+#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately and calculate summary statistics , map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
 
 ##The data 
 
@@ -69,8 +69,8 @@ head(data2)
 
  looks like code and IG variables are matchıng and we can merge the two dataset but first ı wanted to check is there any non-matching value or not to don't miss any value or decide merging method.
 
-```{r}
-# Check non-matching values between "code" and "IG" variables
+```{r Check non-matching values between "code" and "IG" variables}
+
 non_matching_values <- setdiff(data1$code, data2$IG)
 
 # Print the non-matching values
@@ -83,7 +83,7 @@ if(length(non_matching_values) > 0) {
 
 There is no non-matching value thus we can use inner join method to merge these two dataset easily.
 
-```{r}
+```{r Merging datasets}
 data <- merge(data1, data2, by.x = "code", by.y = "IG", all = TRUE)
 head(data)
 
@@ -92,7 +92,7 @@ head(data)
 
 
 
-```{r we read the shapefiles by using "sf" package and printed first 3 rows. }
+```{r  read the shapefiles by using "sf" package and printed first 3 rows. }
 shape<-read_sf("SG_IntermediateZoneBdry_2001/")
 head(shape, 3)
 ```
@@ -107,7 +107,7 @@ merged_data <- merge(data, shape, by.x = "code", by.y = "IZ_CODE", all.x = TRUE)
 
 The set of data points in the data set can relate to a subset or all of the areas in the shapefile. In this example the shapefile elements contain the polygon information for all IZs in Scotland, where as the data set only contains data on the IZs in  Glasgow. Thus the combined spatial data object **sp.dat** only contains the set of IZs in Glasgow. To observe this we plot the both shape and merged data geometry.
 
-```{r, fig.align='center' }
+```{r  plotting all shapefile and our last dataset  }
 # Set up a 1x2 plotting layout
 par(mfrow = c(1, 2))
 
@@ -117,7 +117,7 @@ plot(shape$geometry, main = "Shapefile Geometry")
 # Plot the geometry of the merged dataset
 plot(merged_data$geometry, main = "Merged Data Geometry")
 ```
-```{r}
+```{r Check structure and class of merged dataset for further}
 str(merged_data)
 class(merged_data)
 ```
@@ -175,9 +175,8 @@ The high positive correlation indicates that areas with higher standardized mort
 We could suggest some level of consistency or similarity in the factors influencing standardized mortality ratios between the two years.
 However correlation result does not imply causation; additional analysis is essential to uncover the underlying factors behind the observed correlation
 
-## Convert Data Types and Create Spatial Objects for further study
 
-```{r  }
+```{r Convert Data Types and Create Spatial Objects for further study  }
 
 # Simplify the multipolygon to a single polygon
 merged_data$geometry <- st_simplify(merged_data$geometry)
@@ -193,7 +192,7 @@ sp.dat <- as(sf.dat, "Spatial")
 
 ## Mapping the risks for the two years in separate maps
 
-```{r }
+```{r mapping SMR values seperately for both years 2004&2005}
 
 # Set up a 1x2 layout for two plots
 par(mfrow = c(1, 2))
@@ -235,28 +234,40 @@ SMR = 1: Indicates a respiratory disease occurrence similar to the expected rate
 We can observe that areas with high SMR values tend to be close to other areas with high SMR values, and areas with low SMR values tend to be close to other areas with low SMR values 
 
 
+#Check for spatial autocorrelation in each of the years
 
+```{r Create neighborhood matrix }
 
-```{r Check for spatial autocorrelation in each of the years.}
+#creates a neighbourhood (nb) object from the sf object sf.data
+W.nb <- poly2nb(sf.dat$geometry, row.names = rownames(sp.dat)) 
 
-# Create neighborhood matrix
-W.nb <- poly2nb(sf.dat$geometry, row.names = rownames(sp.dat))
+#creates a neighbourhood matrix from the nb object
 W <- nb2mat(W.nb, style = "B")
+
+
+#creates a spatial list (listw) object for Moran’s I statistic
 W.list <- nb2listw(W.nb, style = "B")
 
+```
+
+```{r Calculating Moran’s I statistic}
+
 # Moran's I for SMR in 2004
-moran_I_2004 <- moran.test(sf.dat$SMR_2004, W.list)
+moran_I_2004 <- moran.mc(sf.dat$SMR_2004, W.list, nsim = 10000)
 print("Moran's I for SMR in 2004:")
 print(moran_I_2004)
 
 # Moran's I for SMR in 2005
-moran_I_2005 <- moran.test(sf.dat$SMR_2005, W.list)
+moran_I_2005 <- moran.mc(sf.dat$SMR_2005, W.list, nsim = 10000)
 print("Moran's I for SMR in 2005:")
 print(moran_I_2005)
 ```
-The low p-values and positive autocorrelation suggest that there is a significant spatial clustering of SMR values in both 2004 and 2005.
 
-The positive Moran's I statistic indicates a positive spatial autocorrelation, suggesting that spatial clusters where neighboring regions exhibit similar patterns in respiratory disease occurrence, as indicated by comparable SMR values. This positive spatial autocorrelation observed in the Moran's I statistic is consistent with what is visually evident on the maps. 
+
+The  p-values are  very small (9.999e-05 or close to zero), suggesting strong evidence against the null hypothest (H0 is independence). Moran’s I statistic equals 0.39147 (2004) and 0.4158 (2005) are significantly different from independence, which provides evidence of spatial correlation in the SMR variables.
+
+
+The positive Moran's I statistic indicates a positive spatial autocorrelation, suggesting that there is strong evidence that spatial clusters where neighboring regions exhibit similar patterns in respiratory disease occurrence, as indicated by comparable SMR values. This positive spatial autocorrelation observed in the Moran's I statistic is consistent with what is visually evident on the maps. 
 
 The positive autocorrelation suggests the presence of spatial clusters, meaning that neighboring regions have similar SMR values. This could indicate the presence of spatial patterns in health outcomes.
 
@@ -324,7 +335,7 @@ The relative risks for the intercepts are approximately 0.82 (model1)  and 0.86 
 
 QQ plots and residuals vs. fitted values plots are indicate reasonably normal and constant variance of residuals.
 
-The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore we now fit a spatial correlation model using the CARBayes package.
+The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore results are matching with previous one and we now fit a spatial correlation model using the CARBayes package.
 
 ##Spatial modelling with CARBayes
 
@@ -350,9 +361,7 @@ moran.mc(x = residuals(model_2004, type = "pearson"), listw = W.list, nsim = 100
 ```
 
 
-```{r}
-
-# Inference from the model for 2004
+```{r Inference from the model for 2004}
 
 # Estimated relative risks and 95% credible intervals
 exp(model_2004$summary.results[, c("Mean", "2.5%", "97.5%")])
@@ -432,8 +441,8 @@ moran.mc(x = residuals(model_2005, type = "pearson"), listw = W.list, nsim = 100
 ```
 
 
-```{r}
-# Inference from the model for 2005
+```{r Inference from the model for 2005}
+
 # Estimated relative risks and 95% credible intervals
 exp(model_2005$summary.results[, c("Mean", "2.5%", "97.5%")])
 
@@ -483,8 +492,9 @@ Notably, the 2004 model exhibited a lower Deviance Information Criterion (DIC), 
 
 #Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
 
+##Extract the mean fitted values and Run a bivariate mixture model clustering method 
 
-```{r  }
+```{r Extract the mean fitted values and Run a bivariate mixture model clustering method }
 # Extract mean fitted values for 2004 and 2005
 mean_fitted_values_2004 <- colMeans(model_2004$samples$fitted)
 mean_fitted_values_2005 <- colMeans(model_2005$samples$fitted)
@@ -493,7 +503,7 @@ mean_fitted_values_2005 <- colMeans(model_2005$samples$fitted)
 mean_fitted_values <- cbind(mean_fitted_values_2004, mean_fitted_values_2005)
 
 # Run a bivariate mixture model clustering method
-bivariate_model <- Mclust(mean_fitted_values, G = 1:10)  # possible to  adjust the range for the number of clusters (G)
+bivariate_model <- Mclust(mean_fitted_values, G = 1:10)  # possible to  adjust the range for the number of clusters (G) 
 
 # Summary of the clustering result
 summary(bivariate_model)
@@ -504,159 +514,83 @@ plot(bivariate_model, what = "classification")
 
 
 ```
+The bivariate mixture model was performed and  fitted using a VEE (ellipsoidal, equal shape and orientation) covariance structure with 2 components (clusters). The clustering table reveals the allocation of observations to each cluster, with 54 in cluster 1 and 217 in cluster 2.
+
+The model's log-likelihood, -2271.475, reflects its ability to explain the data, considering a sample size of 271 and 9 degrees of freedom. The Bayesian Information Criterion (BIC) of -4593.37 indicates a favorable balance between model fit and complexity
+
+We wanted to check and compare the BIC values and the number of cluster for each models.
+The result show that The best-performing models include "VEE," "VVE," and "VII" covariance structures, each with 2 clusters.
+
+Additionally, noteworthy configurations include models with 6 and 7 clusters, specifically in the "EEI," "EII," and "VEI" covariance structures. While these models exhibit slightly higher BIC values, their consideration might provide insights into potential substructures within the data, offering a more nuanced perspective on the clustering patterns.
 
 
-```{r}
+```{r checking the BIC values and #custer for each model}
+# Create an empty data frame to store BIC values
+best_bic_results <- data.frame()
 
-library(clustMD)
-# Fit a mixture model with different covariance structures
-clust_eee <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EEE")
-clust_eev <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EII")
-clust_vev <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VII")
-clust_eei <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EEI")
-clust_vei <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VEI")
-clust_evi <- Mclust(mean_fitted_values, G = 1:10, modelNames = "EVI")
-clust_vvi <- Mclust(mean_fitted_values, G = 1:10, modelNames = "VVI")
+# Loop through different covariance structures
+for (covariance_type in c( "EEE","EEI","EII","VEI","VEE", "VVE", "VII","VVI", "VVV")) {
+  
+  # Initialize variables to track the best BIC and the corresponding number of clusters
+  best_bic <- Inf
+  best_num_clusters <- NA
+  
+  # Loop through different numbers of components
+  for (num_components in 1:10) {  # Adjust the range for the number of clusters (G)
+    # Fit the model
+    model <- Mclust(mean_fitted_values, G = num_components, modelNames = covariance_type)
+    
+    # Get BIC value
+    bic_value <- BIC(model)
+    
+    # Check if the current BIC is the best so far
+    if (bic_value < best_bic) {
+      best_bic <- bic_value
+      best_num_clusters <- length(unique(model$classification))
+    }
+  }
+  
+  # Store results in the data frame
+  result_row <- data.frame(CovarianceType = covariance_type, BestNumClusters = best_num_clusters, BestBIC = best_bic)
+  best_bic_results <- rbind(best_bic_results, result_row)
+}
 
-# Summary of the clustering results using Mclust
-summary(clust_eee)
-summary(clust_eev)
-summary(clust_vev)
-summary(clust_eei)
-summary(clust_vei)
-summary(clust_evi)
-summary(clust_vvi)
+# Print the results
+print(best_bic_results)
 
-# Plot 
-plot(clust_eev, what = "classification", main = "EII Covariance")
-plot(clust_vev, what = "classification", main = "VII Covariance")
-plot(clust_eee, what = "classification", main = "EEE Covariance")
-plot(clust_eei, what = "classification", main = "EEI Covariance")
-plot(clust_vei, what = "classification", main = "VEI Covariance")
-plot(clust_evi, what = "classification", main = "EVI Covariance")
-plot(clust_vvi, what = "classification", main = "VVI Covariance")
-
-```
-
-
-```{r}
-# Extract BIC values
-bic_values <- c(
-  BIC(clust_eee),
-  BIC(clust_eev),
-  BIC(clust_vev),
-  BIC(clust_eei),
-  BIC(clust_vei),
-  BIC(clust_evi),
-  BIC(clust_vvi)
-)
-
-# Display BIC values
-cat("BIC Values:\n")
-cat("EEE Covariance:", BIC(clust_eee), "\n")
-cat("EII Covariance:", BIC(clust_eev), "\n")
-cat("VII Covariance:", BIC(clust_vev), "\n")
-cat("EEI Covariance:", BIC(clust_eei), "\n")
-cat("VEI Covariance:", BIC(clust_vei), "\n")
-cat("EVI Covariance:", BIC(clust_evi), "\n")
-cat("VVI Covariance:", BIC(clust_vvi), "\n")
-
-# Choose the best model
-best_model <- switch(
-  which.min(bic_values),
-  "EEE Covariance" = clust_eee,
-  "EII Covariance" = clust_eev,
-  "VII Covariance" = clust_vev,
-  "EEI Covariance" = clust_eei,
-  "VEI Covariance" = clust_vei,
-  "EVI Covariance" = clust_evi,
-  "VVI Covariance" = clust_vvi
-)
-
-# Plot the best model
-plot(best_model, what = "classification", main = "Best Model")
-
-```
-```{r compare the best model from clusMD and mclust}
-par(mfrow = c(1, 2))
-
-# Plot the best model
-plot(best_model, what = "classification")
-title("Best Model")
-
-# Plot the original bivariate model
-plot(bivariate_model, what = "classification")
-title("Original Bivariate Model")
 
 ```
 
 
 ## Map the Cluster Membership
-```{r}
 
-# Map the cluster membership
-cluster_membership <- predict(bivariate_model)$classification
-
-# Create a new data frame with cluster membership and spatial information
-cluster_data <- data.frame(ID = rownames(sp.dat@data), Cluster = cluster_membership)
-
-# Merge using base R merge function
-sp.dat_cluster <- merge(x = sp.dat.ll, y = cluster_data, by.x = "code", by.y = "ID", all.x = TRUE)
-
-# Mapping the cluster membership
-colours_cluster <- colorFactor(palette = "Set1", levels = unique(cluster_membership))
-
-leaflet(data = sp.dat_cluster) %>%
-  addTiles() %>%
-  addPolygons(fillColor = ~colours_cluster(Cluster),
-              color = "black", weight = 1,
-              fillOpacity = 0.7) %>%
-  addLegend(pal = colours_cluster, values = sp.dat_cluster$Cluster,
-            opacity = 1, title = "Cluster Membership") %>%
-  addScaleBar(position = "bottomleft")
-```
-
-
-```{r  Bivariate Mixture Model Clustering}
-
-# Fit the Gaussian Mixture Model on mean fitted values
-gmm_model <- Mclust(mean_fitted_values, G = 1:5)  
-
-# Get the cluster assignments
-cluster_assignments <- gmm_model$classification
-
-# Comment on the results
-cat("Number of clusters chosen:", gmm_model$G, "\n")
-
-# Component means
-cat("Component means:")
-print(gmm_model$means)
-
-
-```
 
 
 
 ```{r}
 
-# Map the cluster membership
-sf.dat$Cluster <- as.factor(cluster_assignments)
+# Assuming your spatial data has a SpatialPointsDataFrame or a data.frame with coordinates
+spatial_data <- sp.dat.ll  # replace with your spatial data
 
-# Define colors for clusters
-cluster_colors <- colorFactor(palette = "Set3", levels = unique(cluster_assignments))
 
-# Create a leaflet map
+# Add cluster assignments to spatial data
+spatial_data$cluster <- bivariate_model$classification
 
-leaflet(data = sp.dat) %>% 
-  addTiles() %>% 
-  addPolygons(fillColor = ~cluster_colors(Cluster), 
-              color = "white", weight = 1, 
-              fillOpacity = 0.7) %>%
-  addLegend(pal = cluster_colors, values = sp.dat$Cluster, 
-            opacity = 1, title = "Cluster") %>%
-  addScaleBar(position = "bottomleft")
+# Assuming your spatial data is named 'spatial_data'
+subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "cluster")
+
+# Subset data based on selected columns
+subset_data <- spatial_data[, subset_columns]
+
+# Plot the spatial data with different colors for each cluster
+# Plot the spatial data with blue and red colors for each cluster
+plot(subset_data, col = ifelse(subset_data$cluster == 1, "blue", "red"), main = "Spatial Distribution of Clusters (Subset)")
+
+
+
 
 ```
+
 
 
 #Q4:4.	Run another clustering algorithm on the data and use an appropriate measure to compare the two clustering results. (The other algorithm could be k-means, hierarchical clustering, another type of mixture model clustering. The data used could be the raw SMRs or the average fitted values of the risks for the areas for both years, whatever you prefer. You do not need to comment on the other clustering results beyond comparing to the first clustering results from Question 3.)
