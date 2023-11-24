@@ -22,6 +22,14 @@ if(!require(CARBayes)){install.packages("CARBayes")}
 if(!require(mclust)){install.packages("mclust")}
 if(!require(leaflet)){install.packages("leaflet")}
 if(!require(leaflet.extras)){install.packages("leaflet.extras")}
+if(!require(factoextra)){install.packages("factoextra")}
+if(!require(gridExtra)){install.packages("gridExtra")}
+if(!require(cluster)){install.packages("cluster")}
+if(!require(flexclust)){install.packages("flexclust")}
+if(!require(fpc)){install.packages("fpc")}
+if(!require(clustertend)){install.packages("clustertend")}
+if(!require(ClusterR)){install.packages("ClusterR")}
+if(!require(cluster)){install.packages("cluster")}
 
 ```
 
@@ -37,6 +45,13 @@ library(CARBayes)  # For Bayesian model
 library(mclust) #for the bivariate mixture model
 library(leaflet)
 library(leaflet.extras)
+library(factoextra)
+library(gridExtra)
+library(cluster)
+library(flexclust)
+library(fpc)
+library(clustertend)
+library(ClusterR)
 
 ```
 
@@ -570,21 +585,21 @@ print(best_bic_results)
 ```{r}
 
 # Assuming your spatial data has a SpatialPointsDataFrame or a data.frame with coordinates
-spatial_data <- sp.dat.ll  # replace with your spatial data
+spatial_data <- sp.dat.ll  # replace with spatial data
 
 
 # Add cluster assignments to spatial data
-spatial_data$cluster <- bivariate_model$classification
+spatial_data$mclust <- bivariate_model$classification
 
 # Assuming your spatial data is named 'spatial_data'
-subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "cluster")
+subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "mclust")
 
 # Subset data based on selected columns
 subset_data <- spatial_data[, subset_columns]
 
 # Plot the spatial data with different colors for each cluster
-# Plot the spatial data with blue and red colors for each cluster
-plot(subset_data, col = ifelse(subset_data$cluster == 1, "blue", "red"), main = "Spatial Distribution of Clusters (Subset)")
+#plot(subset_data, col = ifelse(subset_data$mclust == 1, "blue", "red"), main = "Spatial Distribution of Clusters")
+plot(subset_data, col = factor(subset_data$mclust), main = "Kmeans - Spatial Distribution of Clusters")
 
 
 
@@ -595,6 +610,77 @@ plot(subset_data, col = ifelse(subset_data$cluster == 1, "blue", "red"), main = 
 
 #Q4:4.	Run another clustering algorithm on the data and use an appropriate measure to compare the two clustering results. (The other algorithm could be k-means, hierarchical clustering, another type of mixture model clustering. The data used could be the raw SMRs or the average fitted values of the risks for the areas for both years, whatever you prefer. You do not need to comment on the other clustering results beyond comparing to the first clustering results from Question 3.)
 
+```{r}
+
+
+# k-means
+k1 = kmeans(mean_fitted_values, centers=2, nstart=25)
+k2 = kmeans(mean_fitted_values, centers=3, nstart=25)
+k3 = kmeans(mean_fitted_values, centers=4, nstart=25)
+k4 = kmeans(mean_fitted_values, centers=5, nstart=25)
+
+# prepare some plots
+p1 <- fviz_cluster(k1, geom = "point", mean_fitted_values) + ggtitle("k = 2")
+p2 <- fviz_cluster(k2, geom = "point", mean_fitted_values) + ggtitle("k = 3")
+p3 <- fviz_cluster(k3, geom = "point", mean_fitted_values) + ggtitle("k = 4")
+p4 <- fviz_cluster(k4, geom = "point", mean_fitted_values) + ggtitle("k = 5")
+
+grid.arrange(p1, p2, p3, p4, nrow=2)
+
+
+```
+```{r}
+
+# optimal number of clusters, another criteria
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters = TRUE)
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters=TRUE, criterion="silhouette")
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters=TRUE, criterion="AIC")
+```
+
+Different Criteria shows that the best number of clusters using kmeans is 2.
+
+
+## Map the 2 Clusters of Kmeans
+
+
+```{r}
+
+
+
+# Add cluster assignments to spatial data
+spatial_data$kmean <- k1$cluster
+
+# Assuming your spatial data is named 'spatial_data'
+subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "kmean")
+
+# Subset data based on selected columns
+subset_data <- spatial_data[, subset_columns]
+
+# Plot the spatial data with different colors for each cluster
+#plot(subset_data, col = ifelse(subset_data$kmean == 1, "red", "blue"), main = "Kmeans - Spatial Distribution of Clusters")
+plot(subset_data, col = factor(subset_data$kmean), main = "Kmeans - Spatial Distribution of Clusters")
+
+
+
+```
+
+```{r}
+# Extracting cluster assignments from K-means
+kmeans_clusters <- k1$cluster
+
+# Extracting cluster assignments from Mclust
+mclust_clusters <- unlist(bivariate_model$classification)
+
+# Calculating Adjusted Rand Index
+ari <- adjustedRandIndex(kmeans_clusters, mclust_clusters)
+cat("Adjusted Rand Index:", ari, "\n")
+
+
+```
+
+The Adjusted Rand Index (ARI) is a measure of the similarity between two clustering results, adjusted for chance. It ranges from -1 to 1, where 1 indicates perfect similarity, 0 indicates the clustering is no better than random, and -1 indicates complete dissimilarity.
+
+An ARI of 0.4281414 suggests a moderate level of agreement between the clustering results. Keep in mind that the interpretation of ARI values can depend on the specific context of your analysis and the nature of the data. If you have any specific questions or if there's anything else you'd like assistance with, feel free to let me know!
 
 
 
