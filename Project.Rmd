@@ -1,0 +1,736 @@
+
+---
+title: "Spatial Cluster Analysis - Group3"
+author: "Gizem Gulsiye Güleli & Ahmed Abdelmaksoud"
+date: "2023-11-07"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Loading and reading packages if its required, include=FALSE,warning=FALSE, results=FALSE, message=FALSE}
+
+if(!require(sf)){install.packages("sf")}
+if(!require(sp)){install.packages("sp")}
+if(!require(spdep)){install.packages("spdep")}
+if(!require(RColorBrewer)){install.packages("RColorBrewer")}
+if(!require(ggplot2)){install.packages("ggplot2")}
+if(!require(satellite)){install.packages("satellite")}
+if(!require(CARBayes)){install.packages("CARBayes")}
+if(!require(mclust)){install.packages("mclust")}
+if(!require(leaflet)){install.packages("leaflet")}
+if(!require(leaflet.extras)){install.packages("leaflet.extras")}
+if(!require(factoextra)){install.packages("factoextra")}
+if(!require(gridExtra)){install.packages("gridExtra")}
+if(!require(cluster)){install.packages("cluster")}
+if(!require(flexclust)){install.packages("flexclust")}
+if(!require(fpc)){install.packages("fpc")}
+if(!require(clustertend)){install.packages("clustertend")}
+if(!require(ClusterR)){install.packages("ClusterR")}
+if(!require(cluster)){install.packages("cluster")}
+
+```
+
+
+```{r read packages ,  echo=T,warning=FALSE,results=FALSE, message=FALSE}
+library(sf) #to read shape files and convert to sf files
+library(sp) #to convert sp object
+library(spdep) #to create neighborhood matrıx &  For spatial dependencies
+library(RColorBrewer) #for mapping  
+library(ggplot2) #for mapping  
+library(satellite) #it was neede to download CARBayes package
+library(CARBayes)  # For Bayesian model
+library(mclust) #for the bivariate mixture model
+library(leaflet) # to create interactive maps 
+library(leaflet.extras) #to create interactive maps 
+library(factoextra)
+library(gridExtra)
+library(cluster)
+library(flexclust)
+library(fpc)
+library(clustertend)
+library(ClusterR)
+
+```
+
+
+
+#Q1.	Create the combined shape and data file, calculate the Standard Mortality Ratio (SMR) for each year separately and calculate summary statistics , map the risks for the two years in separate maps. Comment on the summaries and any spatial patterns of interest you see in the maps. Check for spatial autocorrelation in each of the years. 
+
+##The data 
+
+There are 2 folders :
+
+•	The Data folder contains 2 csv files containing expected counts and observed counts in the 2 years.
+    -expected_counts.csv file have 271 observations with 3 variables that are; code, E2004, E2005
+    -respiratory_admissions.csv file have again 271 observations with 3 variables that are; IG, Y2004, Y2005
+
+
+•	The SG_IntermediateZoneBdry_2001 folder contains the shapefiles for constructing a spatial object in R. 
+    -Shape files have 1235 observations and 6 variables which are ; IZ_CODE, IZ_NAME, STDAREA_HA, Shape_Leng, Shape_Area, geometry
+ 
+
+
+```{r  read two data set which are called "expected_counts" and "respiratory_admissions"}
+data1 <- read.csv(file="Data/expected_counts.csv")
+head(data1)
+
+data2 <- read.csv(file="Data/respiratory_admissions.csv")
+head(data2)
+
+```
+
+ looks like code and IG variables are matchıng and we can merge the two dataset but first ı wanted to check is there any non-matching value or not to don't miss any value or decide merging method.
+
+```{r Check non-matching values between "code" and "IG" variables}
+
+non_matching_values <- setdiff(data1$code, data2$IG)
+
+# Print the non-matching values
+if(length(non_matching_values) > 0) {
+  print(non_matching_values)
+} else {
+  print("No non-matching values found.")
+}
+```
+
+There is no non-matching value thus we can use inner join method to merge these two dataset easily.
+
+```{r Merging datasets}
+data <- merge(data1, data2, by.x = "code", by.y = "IG", all = TRUE)
+head(data)
+
+
+```
+
+
+
+```{r  read the shapefiles by using "sf" package and printed first 3 rows. }
+shape<-read_sf("SG_IntermediateZoneBdry_2001/")
+head(shape, 3)
+```
+
+
+We observed that the unique IZ codes appear in this data table too, so that is how we now link the shapefiles to our data using the **merge()** function. But this time we are sure that shapefiles have much more observation then dataset. Thats why we will try to protect dataset observations.
+
+```{r Perform left join to merge shapefiles with dataset}
+
+merged_data <- merge(data, shape, by.x = "code", by.y = "IZ_CODE", all.x = TRUE)
+```
+
+The set of data points in the data set can relate to a subset or all of the areas in the shapefile. In this example the shapefile elements contain the polygon information for all IZs in Scotland, where as the data set only contains data on the IZs in  Glasgow. Thus the combined spatial data object **sp.dat** only contains the set of IZs in Glasgow. To observe this we plot the both shape and merged data geometry.
+
+```{r  plotting all shapefile and our last dataset  }
+# Set up a 1x2 plotting layout
+par(mfrow = c(1, 2))
+
+# Plot the geometry of the shapefile
+plot(shape$geometry, main = "Shapefile Geometry")
+
+# Plot the geometry of the merged dataset
+plot(merged_data$geometry, main = "Merged Data Geometry")
+```
+```{r Check structure and class of merged dataset for further}
+str(merged_data)
+class(merged_data)
+```
+## Calculating SMR and Summary Statistics (including EDA for SMR values )
+
+```{r calculate the Standard Mortality Ratio (SMR) for each year separately, }
+# Calculate SMR for 2004
+merged_data$SMR_2004 <- (merged_data$Y2004 / merged_data$E2004)
+
+# Calculate SMR for 2005
+merged_data$SMR_2005 <- (merged_data$Y2005 / merged_data$E2005)
+
+
+```
+
+
+```{r calculate summary statistics }
+summary(merged_data)
+
+summary(merged_data[c("SMR_2004", "SMR_2005")])
+
+#EDa for SMR variables
+par(mfrow = c(1, 2))
+
+# Plot histogram for SMR_2004 and SMR_2005 to see distribution 
+
+hist(merged_data$SMR_2004, main = "SMR 2004 Distribution", xlab = "SMR_2004", col = "lightblue")
+hist(merged_data$SMR_2005, main = "SMR 2005 Distribution", xlab = "SMR_2005")
+
+# box plot for distrubiton and observe outliers
+boxplot(merged_data$SMR_2004, main = "SMR 2004 Boxplot", ylab = "SMR_2004", col = "lightblue", border = "black",notch = TRUE )
+boxplot(merged_data$SMR_2005, main = "SMR 2005 Boxplot", ylab = "SMR_2005",notch = TRUE)
+
+
+par(mfrow = c(1, 1))
+
+#scatter plot to observe relation between two variable 
+plot(merged_data$SMR_2004, merged_data$SMR_2005, main = "SMR 2004 vs. SMR 2005", xlab = "SMR_2004", ylab = "SMR_2005")
+abline(lm(merged_data$SMR_2005 ~ merged_data$SMR_2004), col = "red")
+
+cor(merged_data[c("SMR_2004", "SMR_2005")])
+
+
+```
+
+ The minimum and maximum values  suggest that the overall range of standardized mortality ratios did not change significantly between the two years (minimum value equals 0.18 and maximum value equals 1.83 for 2004 ,and minimum value equals 0.31 and maximum value equals 1.98 for 2005)
+
+The median and mean values indicate the central tendency of the data, with the mean slightly higher than the median, suggesting a right-skewed distribution for both year. Histogram plot also showing and proving the right-skewed distribution for both year.
+Also the values are close to each other for both years, however "SMR_2005" having a slightly higher compared to "SMR_2004"
+
+For both SMR_2004 and SMR_2005, the box plots show the existing of outliers—individual data points beyond the whiskers. These extreme values suggest potential variability in specific areas, prompting further investigation into the factors influencing high standardized mortality ratios.
+
+we also check  the scatter plot to displays the relationship between "SMR_2004" and "SMR_2005" values for each observation.This type of plot is useful for visually inspecting the correlation or pattern between two variables. And from the graph we are able to observe positive relation between two variable.   So we calculated the correlation coefficient between "SMR_2004" and "SMR_2005" which is equal  0.85144 and indicates that there is highly positive linear relationship between the two variables.
+The high positive correlation indicates that areas with higher standardized mortality ratios in one year ("SMR_2004") tend to also have higher standardized mortality ratios in the other year ("SMR_2005").
+We could suggest some level of consistency or similarity in the factors influencing standardized mortality ratios between the two years.
+However correlation result does not imply causation; additional analysis is essential to uncover the underlying factors behind the observed correlation
+
+
+```{r Convert Data Types and Create Spatial Objects for further study  }
+
+# Simplify the multipolygon to a single polygon
+merged_data$geometry <- st_simplify(merged_data$geometry)
+
+# Convert to sf object
+sf.dat <- st_as_sf(merged_data)
+
+# Convert to sp object
+sp.dat <- as(sf.dat, "Spatial")
+
+```
+
+
+## Mapping the risks for the two years in separate maps
+
+```{r mapping SMR values seperately for both years 2004&2005}
+
+# Set up a 1x2 layout for two plots
+par(mfrow = c(1, 2))
+
+# for 2004
+ggplot(data = sf.dat) +
+  geom_sf(aes(fill = SMR_2004)) +
+  coord_sf() +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  labs(title = "Risk for 2004", fill = "SMR") +
+  theme(title = element_text(size=16)) +
+scale_fill_gradientn(colors=brewer.pal(n=9, name="YlOrRd"))
+
+
+# for 2005
+ggplot(data = sf.dat) +
+  geom_sf(aes(fill = SMR_2005)) +
+  coord_sf() +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  labs(title = "Risk for 2005", fill = "SMR") +
+  theme(title = element_text(size=16)) +
+scale_fill_gradientn(colors=brewer.pal(n=9, name="YlOrRd"))
+
+```
+
+
+##Comment on the summaries and any spatial patterns of interest you see in the maps. 
+
+
+SMR > 1: Indicates a higher occurrence of respiratory diseases than expected. This might suggest potential health risks or factors contributing to an elevated incidence of respiratory diseases in the studied population.
+
+SMR < 1: Indicates a lower occurrence of respiratory diseases than expected. This might suggest protective factors or a population that experiences fewer respiratory diseases than what would be anticipated based on the standard population.
+
+SMR = 1: Indicates a respiratory disease occurrence similar to the expected rate. In this case, the observed respiratory disease occurrences align with what would be expected based on the standard population.
+
+
+We can observe that areas with high SMR values tend to be close to other areas with high SMR values, and areas with low SMR values tend to be close to other areas with low SMR values.Additionally, it is observable that high-risk areas predominantly concentrate in central regions.
+
+
+
+#Check for spatial autocorrelation in each of the years
+
+```{r Create neighborhood matrix }
+
+#creates a neighbourhood (nb) object from the sf object sf.data
+W.nb <- poly2nb(sf.dat$geometry, row.names = rownames(sp.dat)) 
+
+#creates a neighbourhood matrix from the nb object
+W <- nb2mat(W.nb, style = "B")
+
+
+#creates a spatial list (listw) object for Moran’s I statistic
+W.list <- nb2listw(W.nb, style = "B")
+
+```
+
+```{r Calculating Moran’s I statistic}
+
+# Moran's I for SMR in 2004
+moran_I_2004 <- moran.mc(sf.dat$SMR_2004, W.list, nsim = 10000)
+print("Moran's I for SMR in 2004:")
+print(moran_I_2004)
+
+# Moran's I for SMR in 2005
+moran_I_2005 <- moran.mc(sf.dat$SMR_2005, W.list, nsim = 10000)
+print("Moran's I for SMR in 2005:")
+print(moran_I_2005)
+```
+
+
+The  p-values are  very small (9.999e-05 or close to zero), suggesting strong evidence against the null hypothest (H0 is independence). Moran’s I statistic equals 0.39147 (2004) and 0.4158 (2005) are significantly different from independence, which provides evidence of spatial correlation in the SMR variables.
+
+
+The positive Moran's I statistic indicates a positive spatial autocorrelation, suggesting that there is strong evidence that spatial clusters where neighboring regions exhibit similar patterns in respiratory disease occurrence, as indicated by comparable SMR values. This positive spatial autocorrelation observed in the Moran's I statistic is consistent with what is visually evident on the maps. 
+
+The positive autocorrelation suggests the presence of spatial clusters, meaning that neighboring regions have similar SMR values. This could indicate the presence of spatial patterns in health outcomes.
+
+
+
+#Q2.	Run a separate Poisson Leroux CAR model on each year for the respiratory counts using only an intercept term (no covariates) and expected count offset. Produce some summaries examining convergence of the chain and comment on them. Plot the fitted values on two maps and comment on them.
+
+##A simple (no correlation) covariate model
+
+```{r  -for 2004}
+# Setting the regression formula/equation
+formula1 <- Y2004 ~ offset(log(E2004))
+
+# Fit using MLE/glm
+model1 <- glm(formula = formula1, family = "poisson", data = sp.dat)
+
+# Summary of the model
+summary(model1)
+
+# Check the relative risks
+exp(cbind(model1$coefficients, confint(model1)))
+
+# Residual diagnostics - normality and constant variance
+par(mfrow = c(1, 2))
+qqnorm(residuals(model1, type = "pearson"), main = "", pch = 19)
+qqline(residuals(model1, type = "pearson"), col = "red")
+plot(model1$fitted.values, residuals(model1, type = "pearson"), pch = 19, 
+     xlab = "Fitted values", ylab = "Residuals")
+
+# Residual diagnostics - correlation
+# Replace W.list with our actual spatial weights matrix.
+moran.mc(x = residuals(model1, type = "pearson"), listw = W.list, nsim = 10000)
+
+```
+
+```{r -for 2005}
+# Setting the regression formula/equation for model2
+formula2 <- Y2005 ~ offset(log(E2005))
+
+# Fit using MLE/glm for model2
+model2 <- glm(formula = formula2, family = "poisson", data = merged_data)
+
+# Summary of model2
+summary(model2)
+
+# Check the relative risks for model2
+exp(cbind(model2$coefficients, confint(model2)))
+
+# Residual diagnostics - normality and constant variance for model2
+par(mfrow = c(1, 2))
+qqnorm(residuals(model2, type = "pearson"), main = "", pch = 19)
+qqline(residuals(model2, type = "pearson"), col = "red")
+plot(model2$fitted.values, residuals(model2, type = "pearson"), pch = 19, 
+     xlab = "Fitted values", ylab = "Residuals")
+
+# Residual diagnostics - correlation for model2
+# Replace W.list with our actual spatial weights matrix.
+moran.mc(x = residuals(model2, type = "pearson"), listw = W.list, nsim = 10000)
+
+```
+The results from fitting the Poisson log-linear models for both years (2004 and 2005) show similar patterns.
+The intercepts are approximately equals to -0.19 (model1) and -0.16 (model2) and they represents the log of the expected count when all other covariates are zero.
+
+The relative risks for the intercepts are approximately 0.82 (model1)  and 0.86 (model2).
+
+QQ plots and residuals vs. fitted values plots are indicate reasonably normal and constant variance of residuals.
+
+The Moran’s I statistics are approximately equal to 0.40(model1) and 0.43 (model2)  and the p-values are less than 0.05 and  suggests that the significant positive spatial correlation in residuals. Thus the independence assumption made by the models  not adequate. Therefore results are matching with previous one and we now fit a spatial correlation model using the CARBayes package.
+
+##Spatial modelling with CARBayes
+
+```{r - for 2004}
+set.seed(123) 
+
+# Fitting the spatial correlation model for 2004
+model_2004 <- S.CARleroux(formula = formula1, family = "poisson", data = sf.dat, W = W,
+                          burnin = 10000, n.sample = 100000, thin = 10, verbose = FALSE)
+
+# Print model and summary of the model for 2004
+print(model_2004)
+summary(model_2004)
+
+
+# Check convergence for 2004
+summary(model_2004$samples)
+plot(model_2004$samples$rho)
+
+# Assess goodness of fit for 2004
+moran.mc(x = residuals(model_2004, type = "pearson"), listw = W.list, nsim = 10000)
+
+
+```
+
+
+```{r Inference from the model for 2004}
+set.seed(123) 
+
+# Estimated relative risks and 95% credible intervals
+exp(model_2004$summary.results[, c("Mean", "2.5%", "97.5%")])
+
+# Calculate  risk for 2004
+sp.dat@data$risk_2004 <- model_2004$fitted.values / sp.dat@data$E2004
+
+
+# Calculate Posterior Exceedance Probability (PEP) for 2004
+m <- nrow(model_2004$samples$fitted)
+risk_2004 <- model_2004$samples$fitted / matrix(rep(sp.dat@data$E2004, nrow(model_2004$samples$fitted)), nrow = m, byrow = TRUE)
+summarise.exceedences<-function(samples,exceedences)
+{
+exceed.vec<-apply((samples>exceedences),2,sum)/nrow(samples)
+9
+return(exceed.vec)
+}
+
+sp.dat@data$PEP_2004 <- as.numeric(summarise.exceedences(risk_2004, 1))
+
+
+##mapping the results for 2004 
+sp.dat.ll <- spTransform(sp.dat, CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+par(mfrow = c(1, 2))
+
+##Risk 
+
+colours_risk_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$risk)
+
+
+leaflet(data = sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_risk_2004(risk_2004),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_risk_2004, values = sp.dat.ll@data$risk_2004,
+            opacity = 1, title = "Risk 2004") %>%
+  addScaleBar(position = "bottomleft")
+
+##PEP
+colours_pep_2004 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$PEP_2004)
+
+leaflet(data=sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_pep_2004(PEP_2004),
+              color="black", weight=1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_pep_2004, values = sp.dat.ll@data$PEP_2004,
+            opacity = 1, title="PEP 2004 ") %>%
+  addScaleBar(position="bottomleft")
+
+```
+
+
+
+
+
+```{r Spatial modelling with CARBayes- for 2005}
+set.seed(123) 
+
+# Fitting the spatial correlation model for 2005
+model_2005 <- S.CARleroux(formula = formula2, family = "poisson", data = sf.dat, W = W,
+                          burnin = 10000, n.sample = 100000, thin = 10, verbose = FALSE)
+
+# Print model and summary of the model for 2005
+print(model_2005)
+summary(model_2005)
+
+# Check convergence for 2005
+summary(model_2005$samples)
+plot(model_2005$samples$rho)
+
+# Assess goodness of fit for 2005
+moran.mc(x = residuals(model_2005, type = "pearson"), listw = W.list, nsim = 10000)
+
+
+```
+
+
+```{r Inference from the model for 2005}
+set.seed(123) 
+
+# Estimated relative risks and 95% credible intervals
+exp(model_2005$summary.results[, c("Mean", "2.5%", "97.5%")])
+
+# Calculate risk for 2005
+sp.dat@data$risk_2005 <- model_2005$fitted.values / sp.dat@data$E2005
+
+# Calculate Posterior Exceedance Probability (PEP) for 2005
+m <- nrow(model_2005$samples$fitted)
+risk_2005 <- model_2005$samples$fitted / matrix(rep(sp.dat@data$E2005, nrow(model_2005$samples$fitted)), nrow = m, byrow = TRUE)
+sp.dat@data$PEP_2005 <- as.numeric(summarise.exceedences(risk_2005, 1))
+
+## Mapping the results for 2005
+sp.dat.ll <- spTransform(sp.dat, CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+par(mfrow = c(1, 2))
+
+## Risk
+colours_risk_2005 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$risk_2005)
+
+leaflet(data = sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_risk_2005(risk_2005),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_risk_2005, values = sp.dat.ll@data$risk_2005,
+            opacity = 1, title = "Risk 2005") %>%
+  addScaleBar(position = "bottomleft")
+
+## PEP
+colours_pep_2005 <- colorNumeric(palette = "YlOrRd", domain = sp.dat.ll@data$PEP_2005)
+
+leaflet(data = sp.dat.ll) %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~colours_pep_2005(PEP_2005),
+              color = "black", weight = 1,
+              fillOpacity = 0.7) %>%
+  addLegend(pal = colours_pep_2005, values = sp.dat.ll@data$PEP_2005,
+            opacity = 1, title = "PEP 2005") %>%
+  addScaleBar(position = "bottomleft")
+
+```
+In examining the spatial epidemiological data for 2004 and 2005, Poisson regression models with Leroux CAR spatial correlation were employed, considering offsets of log(E2004) and log(E2005), respectively.
+For the 2004 model, the estimated parameters, including the intercept (-0.26), tau2 (0.31), and rho (0.74), indicated a significant spatial correlation. Convergence diagnostics and Moran's I test affirmed model reliability, with spatial risk maps illustrating the distribution of estimated risks across the area.
+In contrast, the 2005 model demonstrated a weaker spatial correlation (rho: 0.6764), with parameters - intercept (-0.21) and tau2 (0.29) - suggesting increased overall risk. Similar convergence diagnostics and Moran's I tests were applied, emphasizing changes in risk distribution through spatial risk maps.
+Comparing the two years, differences in estimated relative risks and spatial correlation emerged. Risk maps for each year aided in visually assessing changing risk distributions. Furthermore, areas with potentially elevated risks, identified through Posterior Exceedance Probability (PEP) maps, offered additional insights into hotspot locations.
+Notably, the 2004 model exhibited a lower Deviance Information Criterion (DIC), indicating a better fit compared to the 2005 model. Overall, this spatial epidemiological analysis provided insights into risk dynamics, highlighting potential shifts and hotspots across the study area over the two years.
+
+#Q3.	Extract the mean fitted values (after burn-in) for the areas’ risks in each year. Run a bivariate mixture model clustering method on the fitted values for both years (i.e. cluster both years’ fitted values at the same time, don’t run a separate clustering on each year). Comment on your result in terms of number of clusters chosen, the component means. (Extra credit: map the cluster membership (i.e. one colour for each cluster)).
+
+##Extract the mean fitted values and Run a bivariate mixture model clustering method 
+
+
+```{r}
+# Check structure
+str(model_2004$samples$fitted)
+str(model_2005$samples$fitted)
+
+# Check column names
+colnames(model_2004$samples$fitted)
+colnames(model_2005$samples$fitted)
+
+# Check data type
+class(model_2004$samples$fitted)
+class(model_2005$samples$fitted)
+
+# Check consistency in the number of columns
+ncol(model_2004$samples$fitted)
+ncol(model_2005$samples$fitted)
+
+
+```
+```{r}
+class(model_2004$samples$fitted[, 1])
+class(model_2005$samples$fitted[, 1])
+
+summary(model_2004$samples$fitted[, 1])
+summary(model_2005$samples$fitted[, 1])
+
+```
+
+It appears that each column in model_2004$samples$fitted and model_2005$samples$fitted represents a separate MCMC chain.
+since we have multiple MCMC chains, calculating the mean using *colMeans()* function provides the mean across all chains for each parameter
+
+```{r Extract the mean fitted values and Run a bivariate mixture model clustering method }
+set.seed(123) 
+
+# Extract mean fitted values with colMeans function for 2004 and 2005
+mean_fitted_values_2004 <- colMeans(model_2004$samples$fitted)
+mean_fitted_values_2005 <- colMeans(model_2005$samples$fitted)
+
+# Combine the mean fitted values for both years
+mean_fitted_values <- cbind(mean_fitted_values_2004, mean_fitted_values_2005)
+
+
+# Run a bivariate mixture model clustering method
+bivariate_model <- Mclust(mean_fitted_values, G = 1:10)  # possible to  adjust the range for the number of clusters (G) 
+
+# Summary of the clustering result
+summary(bivariate_model)
+
+
+# Plot the clustering result
+plot(bivariate_model, what = "classification")
+
+
+```
+The bivariate mixture model was performed and  fitted using a VEE (ellipsoidal, equal shape and orientation) covariance structure with 2 components (clusters). The clustering table reveals the allocation of observations to each cluster, with 54 in cluster 1 and 217 in cluster 2.
+
+The model's log-likelihood, -2271.735, reflects its ability to explain the data, considering a sample size of 271 and 9 degrees of freedom. The Bayesian Information Criterion (BIC) of -4593.889 indicates a favorable balance between model fit and complexity
+
+We wanted to check and compare the BIC values and the number of cluster for each models.
+The result show that The best-performing models include "VEE," "VVE," and "VII" covariance structures, each with 2 clusters.
+
+Additionally, some models include  6 or 7 clusters, specifically in the "EEI," "EII," and "VEI" covariance structures. While these models exhibit slightly higher BIC values, their consideration might provide insights into potential substructures within the data, offering a more slight perspective on the clustering patterns.
+
+
+```{r checking the BIC values and #custer for each model}
+# Create an empty data frame to store BIC values
+best_bic_results <- data.frame()
+
+# Loop through different covariance structures
+for (covariance_type in c( "EEE","EEI","EII","VEI","VEE", "VVE", "VII","VVI", "VVV")) {
+  
+  # Initialize variables to track the best BIC and the corresponding number of clusters
+  best_bic <- Inf
+  best_num_clusters <- NA
+  
+  # Loop through different numbers of components
+  for (num_components in 1:10) {  # Adjust the range for the number of clusters (G)
+    # Fit the model
+    model <- Mclust(mean_fitted_values, G = num_components, modelNames = covariance_type)
+    
+    # Get BIC value
+    bic_value <- BIC(model)
+    
+    # Check if the current BIC is the best so far
+    if (bic_value < best_bic) {
+      best_bic <- bic_value
+      best_num_clusters <- length(unique(model$classification))
+    }
+  }
+  
+  # Store results in the data frame
+  result_row <- data.frame(CovarianceType = covariance_type, BestNumClusters = best_num_clusters, BestBIC = best_bic)
+  best_bic_results <- rbind(best_bic_results, result_row)
+}
+
+# Print the results
+print(best_bic_results)
+
+
+```
+
+
+## Map the Cluster Membership
+
+
+
+```{r}
+
+# Assuming your spatial data has a SpatialPointsDataFrame or a data.frame with coordinates
+spatial_data <- sp.dat.ll  # replace with spatial data
+
+
+# Add cluster assignments to spatial data
+spatial_data$mclust <- bivariate_model$classification
+
+# Assuming your spatial data is named 'spatial_data'
+subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "mclust")
+
+# Subset data based on selected columns
+subset_data <- spatial_data[, subset_columns]
+
+# Plot the spatial data with different colors for each cluster
+plot(subset_data, col = ifelse(subset_data$mclust == 1, "blue", "red"), main = "Spatial Distribution of Clusters")
+
+#plot(subset_data, col = factor(subset_data$mclust), main = "Kmeans - Spatial Distribution of Clusters")
+
+
+
+
+```
+
+
+
+#Q4:4.	Run another clustering algorithm on the data and use an appropriate measure to compare the two clustering results. (The other algorithm could be k-means, hierarchical clustering, another type of mixture model clustering. The data used could be the raw SMRs or the average fitted values of the risks for the areas for both years, whatever you prefer. You do not need to comment on the other clustering results beyond comparing to the first clustering results from Question 3.)
+
+```{r}
+set.seed(123) 
+
+# k-means
+k1 = kmeans(mean_fitted_values, centers=2, nstart=25)
+k2 = kmeans(mean_fitted_values, centers=3, nstart=25)
+k3 = kmeans(mean_fitted_values, centers=4, nstart=25)
+k4 = kmeans(mean_fitted_values, centers=5, nstart=25)
+k6 = kmeans(mean_fitted_values, centers=7, nstart=25)
+# prepare some plots
+p1 <- fviz_cluster(k1, geom = "point", mean_fitted_values) + ggtitle("k = 2")
+p2 <- fviz_cluster(k2, geom = "point", mean_fitted_values) + ggtitle("k = 3")
+p3 <- fviz_cluster(k3, geom = "point", mean_fitted_values) + ggtitle("k = 4")
+p4 <- fviz_cluster(k4, geom = "point", mean_fitted_values) + ggtitle("k = 5")
+p5 <- fviz_cluster(k6, geom = "point", mean_fitted_values) + ggtitle("k = 7")
+grid.arrange(p1, p2, p3, p4,p5, nrow=2)
+
+
+```
+
+We performed the  k-means clustering on mean_fitted_values with different values of number of clusters (k). Whe we were choosing k , also we considered previous results and made it till 7. Afterward,  we visualized the clustering results for various values of k using the *fviz_cluster()* function from the factoextra package.
+
+```{r}
+
+# optimal number of clusters, another criteria
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters = TRUE)
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters=TRUE, criterion="silhouette")
+opt2<-Optimal_Clusters_KMeans(mean_fitted_values, max_clusters=10, plot_clusters=TRUE, criterion="AIC")
+```
+WE used the *Optimal_Clusters_KMeans()* function to determine the optimal number of clusters for k-eans clustering based on different criterias (default one, silhouette, and AIC). Accord'ng to results  we observed that the best number of clusters using k-means is equal to 2. 
+
+
+## Map the 2 Clusters of Kmeans
+
+
+```{r}
+
+
+# Add cluster assignments to spatial data
+spatial_data$kmean <- k1$cluster
+
+# Assuming your spatial data is named 'spatial_data'
+subset_columns <- c("code", "IZ_NAME", "STDAREA_HA", "Shape_Leng", "Shape_Area", "SMR_2004", "kmean")
+
+# Subset data based on selected columns
+subset_data <- spatial_data[, subset_columns]
+
+# Plot the spatial data with different colors for each cluster
+plot(subset_data, col = ifelse(subset_data$kmean == 1, "blue", "red"), main = "Kmeans - Spatial Distribution of Clusters")
+
+#plot(subset_data, col = factor(subset_data$kmean), main = "Kmeans - Spatial Distribution of Clusters")
+
+
+
+
+```
+
+```{r}
+# Extracting cluster assignments from K-means
+kmeans_clusters <- k1$cluster
+
+# Extracting cluster assignments from Mclust
+mclust_clusters <- unlist(bivariate_model$classification)
+
+# Calculating Adjusted Rand Index
+ari <- adjustedRandIndex(kmeans_clusters, mclust_clusters)
+cat("Adjusted Rand Index:", ari, "\n")
+
+
+```
+
+The Adjusted Rand Index (ARI) is a measure of the similarity between two clustering results, adjusted for chance. It ranges from -1 to 1, where 1 indicates perfect similarity, 0 indicates the clustering is no better than random, and -1 indicates complete dissimilarity.
+
+With an ARI of 0.38, we observe a moderate level of concordance between the clustering results. 
+
+
+
+
+
+
+
