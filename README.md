@@ -43,7 +43,7 @@ Extracted mean fitted values from the spatial models.
 Ran a bivariate mixture model clustering method and visualized the results.
 Explored different covariance structures and cluster numbers, selecting the best-performing model.
 
-### Comparison with k-means:
+### K-means and Comparison between two cluster:
 
 Applied k-means clustering on mean fitted values.
 Explored multiple cluster numbers to find optimal solutions.
