@@ -6,7 +6,6 @@ In this project, we conducted a detailed spatial cluster analysis of respiratory
 
 expected_counts.csv: 271 observations with 3 variables (code, E2004, E2005)
 respiratory_admissions.csv: 271 observations with 3 variables (IG, Y2004, Y2005)
-Spatial Information:
 
 Shapefiles in the SG_IntermediateZoneBdry_2001 folder with 1235 observations and 6 variables (IZ_CODE, IZ_NAME, STDAREA_HA, Shape_Leng, Shape_Area, geometry)
 
